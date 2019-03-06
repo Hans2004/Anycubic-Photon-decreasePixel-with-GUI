@@ -2,8 +2,11 @@
 #include "ui_mainwindow.h"
 //#include <QFileInfo>
 #include <QString>
+#include <QFileDialog>
+#include <QMessageBox>
+#include <QProgressBar>
 
-pixelType pixelBuf[1440][2560];
+pixelType showBuf[1440][2560];
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -11,43 +14,32 @@ MainWindow::MainWindow(QWidget *parent) :
 {
     ui->setupUi(this);
     this->setFixedSize(this->geometry().width(),this->geometry().height());
-    ui->verticalScrollBar->setEnabled(FALSE);
-    memset(&header,0, sizeof(header));
+    ui->verticalScrollBar->setEnabled(false);
+    //memset(&header,0, sizeof(header));
 }
 
 MainWindow::~MainWindow() {
     delete ui;
+    if (photon!=nullptr) delete photon;
 }
 
 void MainWindow::on_actionOpen_triggered() {
     inFile = QFileDialog::getOpenFileName(this, "Select file to decrease Pixels from",
                                           QDir::homePath(),
-                                          "Photon Files (*.photon)",nullptr,QFileDialog::DontUseNativeDialog);
+                                          "Photon Files (*.photon)");
 
     if (inFile=="") return;
 
     FILE *fp=fopen(inFile.toStdString().c_str(), "rb");
     if (fp==nullptr) {
-        qDebug() << endl << "Error! File: " << inFile << " does not exist!" << endl;
+        //qDebug() << endl << "Error! File: " << inFile << " does not exist!" << endl;
         return;
     }
 
     setWindowTitle("decreasePixel: " + inFile);
 
-    if (header.preview0Addr!=0) {
-        free(preview1.imageData);
-        free(preview2.imageData);
-        rawData.clear();
-        vector <vector <unsigned char> >().swap(rawData);
-        vector<layerDefType>().swap(layerDefs);
-    }
-
-
-    getHeader(&header, fp);
-    getPreview( header.preview0Addr, &preview1, fp );
-    getPreview( header.preview1Addr, &preview2, fp );
-    getLayerDefs( header.layerDefsAddr, header.nrLayers, &layerDefs, fp );
-    getImages(&rawData, &layerDefs, header.nrLayers,fp);
+    if (photon!=nullptr) delete photon;
+    photon = new PhotonFile(fp);
 
     QString tempStr;
     QTextStream outStr(&tempStr);
@@ -56,21 +48,21 @@ void MainWindow::on_actionOpen_triggered() {
     outStr << "File: " << endl << inFile.section("/",-1,-1) << endl;
     outStr << "loaded at: " << QTime::currentTime().toString() << endl << endl;
 
-    outStr << "Bed Dimensions (X, Y, Z): " << header.bedX << ", " << header.bedY << ", " << header.bedZ << endl;
-    outStr << "Layer Height            : " << header.layerHeight << endl;
-    outStr << "Exposure Time           : " << header.expTime << endl;
-    outStr << "Bottom Exposure Time    : " << header.expBottom << endl;
-    outStr << "Off Time                : " << header.offTime << endl;
-    outStr << "#Bottom Layers          : " << header.bottomLayers << endl;
-    outStr << "Total #Layers           : " << header.nrLayers << endl;
-    outStr << endl;
+   outStr << "Bed Dimensions (X, Y, Z): " << photon->getHeader().bedX << ", " << photon->getHeader().bedY << ", " << photon->getHeader().bedZ << endl;
+    outStr << "Layer Height            : " << photon->getHeader().layerHeight << endl;
+    outStr << "Exposure Time           : " << photon->getHeader().expTime << endl;
+    outStr << "Bottom Exposure Time    : " << photon->getHeader().expBottom << endl;
+    outStr << "Off Time                : " << photon->getHeader().offTime << endl;
+    outStr << "#Bottom Layers          : " << photon->getHeader().bottomLayers << endl;
+    outStr << "Total #Layers           : " << photon->getHeader().nrLayers << endl;
+   outStr << endl;
 
     ui->txtInfo->appendPlainText(tempStr);
-    ui->lblNrLayers->setText(QString::number(header.nrLayers) + " Layers");
+    ui->lblNrLayers->setText(QString::number(photon->getHeader().nrLayers) + " Layers");
 
-    ui->verticalScrollBar->setMaximum(header.nrLayers-1);
-    ui->verticalScrollBar->setEnabled(TRUE);
-    decodeImageFromRaw(rawData[0], pixelBuf);
+    ui->verticalScrollBar->setMaximum(photon->getHeader().nrLayers-1);
+    ui->verticalScrollBar->setEnabled(true);
+    photon->decodeImageFromRaw(0, showBuf);
     ui->txtCurrentLayer->setText("0");
 
     ui->widget->repaint();
@@ -80,48 +72,25 @@ void MainWindow::on_actionOpen_triggered() {
 
 void MainWindow::on_actionSave_triggered() {
 
-    if (header.nrLayers==0) {
+    if (photon==nullptr) {
         QMessageBox::information(this, "Cannot do this now", "You need to load a file first.", QMessageBox::Ok);
         return;
     }
-
+/*
     outFile = QFileDialog::getSaveFileName(this, tr("Select file to Save to"),
                                           QDir::homePath(),
                                           tr("Photon Files (*.photon)"),nullptr,QFileDialog::DontUseNativeDialog);
+*/
+    outFile = QFileDialog::getSaveFileName(this, tr("Select file to Save to"),
+                                          QDir::homePath(),
+                                          tr("Photon Files (*.photon)"));
+
     if (outFile=="") return;
 
-    int nextFp = sizeof(headerType);
-    header.preview0Addr = nextFp;
-    nextFp += sizeof(previewType::padding) +
-            sizeof(previewType::dataLength) +
-            sizeof(previewType::resolutionX) +
-            sizeof(previewType::resolutionY) +
-            sizeof(previewType::imageAddress);
-    preview1.imageAddress = nextFp;
-    nextFp += static_cast<unsigned long>(preview1.dataLength);
-    header.preview1Addr = nextFp;
-    nextFp += sizeof(previewType::padding) +
-            sizeof(previewType::dataLength) +
-            sizeof(previewType::resolutionX) +
-            sizeof(previewType::resolutionY) +
-            sizeof(previewType::imageAddress);
-    preview2.imageAddress = nextFp;
-    nextFp += static_cast<unsigned long>(preview2.dataLength);
-    header.layerDefsAddr = nextFp;
-    nextFp += static_cast<int>(sizeof(layerDefType)) * header.nrLayers;
-    for (unsigned long i=0; i<static_cast<unsigned long>(header.nrLayers); i++) {
-        layerDefs.at(i).imageAddress=nextFp;
-        nextFp+=rawData.at(i).size();
-    }
-
     FILE *wp=fopen(outFile.toStdString().c_str(),"wb");
-    writeHeader(&header,wp);
-    writePreview(&preview1,wp);
-    writePreview(&preview2,wp);
-    writeLayerDefs(header.nrLayers, &layerDefs, wp);
-    writeImages(&rawData, header.nrLayers,wp);
 
-
+    photon->writeFile(wp);
+    fclose(wp);
     QString tempStr;
     QTextStream outStr(&tempStr);
     outStr << "File: " << endl << outFile.section("/",-1,-1) << endl;
@@ -131,33 +100,31 @@ void MainWindow::on_actionSave_triggered() {
 
 void MainWindow::on_verticalScrollBar_valueChanged(int value)
 {
-    decodeImageFromRaw(rawData[static_cast<unsigned long>(value)], pixelBuf);
+    photon->decodeImageFromRaw(static_cast<unsigned long>(value), showBuf);
     ui->txtCurrentLayer->setText(QString::number(value));
     ui->widget->repaint();
 }
 
 void MainWindow::on_txtCurrentLayer_textChanged(const QString &arg1)
 {
-    if (arg1.toInt()<header.nrLayers-1) {
-        decodeImageFromRaw(rawData[static_cast<unsigned long>(arg1.toInt())], pixelBuf);
+    if (arg1.toInt()<photon->getHeader().nrLayers-1) {
+        photon->decodeImageFromRaw(arg1.toULong(), showBuf);
         ui->verticalScrollBar->setValue(arg1.toInt());
     } else {
-        decodeImageFromRaw(rawData[static_cast<unsigned long>(header.nrLayers-1)], pixelBuf);
-        ui->verticalScrollBar->setValue(header.nrLayers-1);
+        photon->decodeImageFromRaw(static_cast<unsigned long>(photon->getHeader().nrLayers-1), showBuf);
+        ui->verticalScrollBar->setValue(photon->getHeader().nrLayers-1);
     }
 }
 
-
-
 void MainWindow::on_btnDecrease_clicked() {
 
-    if (header.nrLayers==0) {
+    if (photon->getHeader().nrLayers==0) {
         QMessageBox::information(this, "Cannot do this now", "You need to load a file first.", QMessageBox::Ok);
         return;
     }
 
     QProgressBar *progressBar = new QProgressBar;
-    progressBar->setRange(0,header.nrLayers-1);
+    progressBar->setRange(0,photon->getHeader().nrLayers-1);
     QLabel *label= new QLabel;
     label->setText("Trimming Pixels: ");
     ui->statusBar->addPermanentWidget(label);
@@ -167,22 +134,16 @@ void MainWindow::on_btnDecrease_clicked() {
 
     ui->txtInfo->appendPlainText("Starting decreasing at: " + QTime::currentTime().toString());
 
-
-    int nextAddr=layerDefs[0].imageAddress;
-    for (unsigned long i=0; i<static_cast<unsigned long>(header.nrLayers); i++) {
+    for (int i=0; i<photon->getHeader().nrLayers; i++) {
         progressBar->setValue(static_cast<int>(i));
-        layerDefs[i].imageAddress=nextAddr;
-        decodeImageFromRaw(rawData[i], pixelBuf);
-        decreasePixel(pixelBuf);
-        encodeImageToRaw(&rawData[i], pixelBuf);
-        layerDefs[i].dataLength=static_cast<int>(rawData[i].size());
-        nextAddr+=rawData[i].size();
+        photon->decreasePixel(static_cast<unsigned long>(i));
+        QCoreApplication::processEvents();              // This prevents the loop from blocking the GUI.
     }
     ui->statusBar->removeWidget(progressBar);
     ui->statusBar->removeWidget(label);
     delete progressBar;
     delete label;
-    decodeImageFromRaw(rawData[static_cast<unsigned long>(ui->txtCurrentLayer->text().toInt())], pixelBuf);
+    photon->decodeImageFromRaw(ui->txtCurrentLayer->text().toULong(), showBuf);
     ui->widget->repaint();
     ui->txtInfo->appendPlainText("Finished at: " + QTime::currentTime().toString());
     ui->txtInfo->appendPlainText("");

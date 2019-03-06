@@ -1,6 +1,7 @@
 #include "graphicswidget.h"
 #include "mainwindow.h"
-#include <QDebug>
+//#include <QDebug>
+#include <QStyleOption>
 
 graphicsWidget::graphicsWidget(QWidget *parent) : QWidget(parent)
 {
@@ -22,7 +23,7 @@ void graphicsWidget::paintEvent([[gnu::unused]] QPaintEvent *event) {
     int yStep=2560/painter.device()->height();
     for (int y=0; y<2560; y+=yStep) {
         for (int x=0; x<1440; x+=xStep) {
-           c=static_cast<unsigned char>(pixelBuf[x][y].color*255);
+          c=static_cast<unsigned char>(showBuf[x][y].color*255);
            pen.setColor(QColor(c,c,c));
            painter.setPen(pen);
            painter.drawPoint(x/xStep,y/yStep);

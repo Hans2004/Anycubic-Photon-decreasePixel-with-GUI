@@ -4,10 +4,11 @@
 #include <QMainWindow>
 #include <QtCore>
 #include <QtGui>
-#include <QDebug>
-#include "fileutils.h"
+//#include <QDebug>
+//#include "fileutils.h"
+#include "photonfile.h"
 
-extern pixelType pixelBuf[1440][2560];
+extern pixelType showBuf[1440][2560];
 
 namespace Ui {
 class MainWindow;
@@ -36,11 +37,9 @@ private slots:
 private:
     Ui::MainWindow *ui;
     QString inFile="", outFile="";
-    headerType header;
-    previewType preview1;
-    previewType preview2;
-    vector<layerDefType> layerDefs;
-    vector< vector<unsigned char> > rawData;
+
+    PhotonFile *photon=nullptr;
+    //pixelType pixelBuf[1440][2560];
 };
 
 #endif // MAINWINDOW_H

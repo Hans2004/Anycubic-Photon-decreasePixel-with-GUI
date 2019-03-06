@@ -4,7 +4,7 @@
 #include <QWidget>
 #include <QtCore>
 #include <QtGui>
-#include "fileutils.h"
+#include "photonfile.h"
 
 class graphicsWidget : public QWidget
 {
