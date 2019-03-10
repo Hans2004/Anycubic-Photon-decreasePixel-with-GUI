@@ -4,6 +4,7 @@
 #include <QMainWindow>
 #include <QtCore>
 #include <QtGui>
+#include <memory>
 //#include <QDebug>
 //#include "fileutils.h"
 #include "photonfile.h"
@@ -37,8 +38,8 @@ private slots:
 private:
     Ui::MainWindow *ui;
     QString inFile="", outFile="";
-
-    PhotonFile *photon=nullptr;
+    unique_ptr<PhotonFile> photon;
+    //PhotonFile *photon=nullptr;
     //pixelType pixelBuf[1440][2560];
 };
 

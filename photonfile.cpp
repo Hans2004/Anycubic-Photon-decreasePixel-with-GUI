@@ -1,8 +1,7 @@
 #include "photonfile.h"
 using namespace std;
 
-PhotonFile::PhotonFile( FILE *file )
-{
+PhotonFile::PhotonFile( FILE *file ) {
     fp = file;
     readHeader();
     readPreview();
@@ -10,10 +9,23 @@ PhotonFile::PhotonFile( FILE *file )
     readImages();
 }
 
+PhotonFile::PhotonFile( string fileName ) {
+    fp=fopen(fileName.c_str(), "rb");
+    readHeader();
+    readPreview();
+    readLayerDefs();
+    readImages();
+    fclose(fp);
+    fp=nullptr;
+}
+
+
 PhotonFile::~PhotonFile() {
+    std::cout << "In PhotonFile destructor" << endl;
+    if (fp!=nullptr) fclose(fp);
     if (header.preview0Addr!=0) {
-        delete[] preview1.imageData;
-        delete[] preview2.imageData;
+        preview1.imageData.clear();
+        preview2.imageData.clear();
         rawData.clear();
     }
 }
@@ -26,8 +38,8 @@ void PhotonFile::readHeader() {
     fread(&header, sizeof(headerType),1,fp);
 }
 
-void PhotonFile::writeHeader( headerType *header, FILE *fp) {
-    fwrite(header, sizeof(headerType),1 , fp);
+void PhotonFile::writeHeader() {
+    fwrite(&header, sizeof(headerType),1 , wp);
 }
 
 void PhotonFile::readPreview() {
@@ -37,8 +49,8 @@ void PhotonFile::readPreview() {
     fread(&preview1.imageAddress, sizeof(preview1.imageAddress),1,fp);
     fread(&preview1.dataLength, sizeof(preview1.dataLength),1,fp);
     fread(&preview1.padding, sizeof(preview1.padding),1,fp);
-    preview1.imageData = new char[static_cast<unsigned long>(preview1.dataLength)];
-    fread(preview1.imageData, static_cast<unsigned long>(preview1.dataLength), 1, fp);
+    preview1.imageData.resize(static_cast<unsigned long>(preview1.dataLength));
+    fread(&preview1.imageData[0], static_cast<unsigned long>(preview1.dataLength), 1, fp);
 
     fseek(fp, header.preview1Addr, SEEK_SET);
     fread(&preview2.resolutionX, sizeof(preview2.resolutionX),1,fp);
@@ -46,17 +58,24 @@ void PhotonFile::readPreview() {
     fread(&preview2.imageAddress, sizeof(preview2.imageAddress),1,fp);
     fread(&preview2.dataLength, sizeof(preview2.dataLength),1,fp);
     fread(&preview2.padding, sizeof(preview2.padding),1,fp);
-    preview2.imageData = new char[static_cast<unsigned long>(preview2.dataLength)];
-    fread(preview2.imageData, static_cast<unsigned long>(preview2.dataLength), 1, fp);
+    preview2.imageData.resize(static_cast<unsigned long>(preview2.dataLength));
+    fread(&preview2.imageData[0], static_cast<unsigned long>(preview2.dataLength), 1, fp);
 }
 
-void PhotonFile::writePreview( previewType *preview, FILE* fp) {
-    fwrite(&preview->resolutionX, sizeof(previewType::resolutionX),1,fp);
-    fwrite(&preview->resolutionY, sizeof(previewType::resolutionY),1,fp);
-    fwrite(&preview->imageAddress, sizeof(previewType::imageAddress),1,fp);
-    fwrite(&preview->dataLength, sizeof(previewType::dataLength),1,fp);
-    fwrite(&preview->padding, sizeof(previewType::padding),1,fp);
-    fwrite(preview->imageData, static_cast<unsigned long>(preview->dataLength), 1, fp);
+void PhotonFile::writePreviews() {
+    fwrite(&preview1.resolutionX, sizeof(previewType::resolutionX),1,wp);
+    fwrite(&preview1.resolutionY, sizeof(previewType::resolutionY),1,wp);
+    fwrite(&preview1.imageAddress, sizeof(previewType::imageAddress),1,wp);
+    fwrite(&preview1.dataLength, sizeof(previewType::dataLength),1,wp);
+    fwrite(&preview1.padding, sizeof(previewType::padding),1,wp);
+    fwrite(&preview1.imageData[0], static_cast<unsigned long>(preview1.dataLength), 1, wp);
+
+    fwrite(&preview2.resolutionX, sizeof(previewType::resolutionX),1,wp);
+    fwrite(&preview2.resolutionY, sizeof(previewType::resolutionY),1,wp);
+    fwrite(&preview2.imageAddress, sizeof(previewType::imageAddress),1,wp);
+    fwrite(&preview2.dataLength, sizeof(previewType::dataLength),1,wp);
+    fwrite(&preview2.padding, sizeof(previewType::padding),1,wp);
+    fwrite(&preview2.imageData[0], static_cast<unsigned long>(preview2.dataLength), 1, wp);
 }
 
 void PhotonFile::readLayerDefs() {
@@ -69,9 +88,9 @@ void PhotonFile::readLayerDefs() {
     }
 }
 
-void PhotonFile::writeLayerDefs( int nrLayersString, vector<layerDefType> *layerDefs, FILE *fp ) {
-    for (unsigned long i=0; i<static_cast<unsigned long>(nrLayersString); i++) {
-        fwrite( &layerDefs->at(i), sizeof(layerDefType), 1, fp);
+void PhotonFile::writeLayerDefs() {
+    for (unsigned long i=0; i<static_cast<unsigned long>(header.nrLayers); i++) {
+        fwrite( &layerDefs.at(i), sizeof(layerDefType), 1, wp);
     }
 }
 
@@ -79,16 +98,16 @@ void PhotonFile::readImages() {
     unsigned char eol;
     for (vector<layerDefType>::size_type i=0; i<static_cast<vector<layerDefType>::size_type>(header.nrLayers); i++) {
         fseek(fp, layerDefs.at(i).imageAddress, SEEK_SET);
-        vector<unsigned char> temp(static_cast<unsigned long>(layerDefs.at(i).dataLength),0); // This creates a new empty vector with size datalength
+        vector<unsigned char> temp(static_cast<unsigned long>(layerDefs.at(i).dataLength)); // This creates a new empty vector with size datalength
         fread(&temp.at(0),static_cast<vector<layerDefType>::size_type>(layerDefs.at(i).dataLength),1,fp);
         rawData.push_back(temp);
         fread(&eol, 1, 1, fp);
     }
 }
 
-void PhotonFile::writeImages(vector <vector <unsigned char> > *rawData, int nLayers,FILE *fp) {
-    for (unsigned long i=0; i<static_cast<unsigned long>(nLayers); i++) {
-        fwrite(&rawData->at(i)[0], rawData->at(i).size(), 1, fp);
+void PhotonFile::writeImages() {
+    for (unsigned long i=0; i<static_cast<unsigned long>(header.nrLayers); i++) {
+        fwrite(&rawData.at(i)[0], rawData.at(i).size(), 1, wp);
     }
 }
 
@@ -193,7 +212,8 @@ void PhotonFile::decreasePixel( unsigned long layer ) {
     }
 }
 
-void PhotonFile::writeFile( FILE *wp ) {
+void PhotonFile::writeFile(string fileName) {
+    wp = fopen(fileName.c_str(), "wb");
     int nextFp = sizeof(headerType);
     header.preview0Addr = nextFp;
     nextFp += sizeof(previewType::padding) +
@@ -218,11 +238,13 @@ void PhotonFile::writeFile( FILE *wp ) {
         nextFp+=rawData.at(i).size();
     }
 
-    writeHeader(&header,wp);
-    writePreview(&preview1,wp);
-    writePreview(&preview2,wp);
-    writeLayerDefs(header.nrLayers, &layerDefs, wp);
-    writeImages(&rawData, header.nrLayers,wp);
+
+    writeHeader();
+    writePreviews();
+    writeLayerDefs();
+    writeImages();
+    fflush(wp);
+    fclose(wp);
 }
 
 void PhotonFile::printProgress (double percentage)
@@ -232,4 +254,19 @@ void PhotonFile::printProgress (double percentage)
     int rpad = PBWIDTH - lpad;
     printf ("\r%3d%% [%.*s%*s]", val, lpad, PBSTR, rpad, "");
     fflush (stdout);
+}
+
+ostream& operator<<(ostream &outStr, const PhotonFile &ff) {
+    outStr << "Bed Dimensions, X       : " << ff.header.bedX << endl;
+    outStr << "Bed Dimensions, Y       : " << ff.header.bedY << endl;
+    outStr << "Bed Dimensions, Z       : " << ff.header.bedZ << endl;
+    outStr << "Layer Height            : " << ff.header.layerHeight << endl;
+    outStr << "Exposure Time           : " << ff.header.expTime << endl;
+    outStr << "Bottom Exposure Time    : " << ff.header.expBottom << endl;
+    outStr << "Off Time                : " << ff.header.offTime << endl;
+    outStr << "#Bottom Layers          : " << ff.header.bottomLayers << endl;
+    outStr << "Total #Layers           : " << ff.header.nrLayers << endl;
+    outStr << endl;
+
+    return outStr;
 }

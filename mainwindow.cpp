@@ -15,12 +15,11 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->setupUi(this);
     this->setFixedSize(this->geometry().width(),this->geometry().height());
     ui->verticalScrollBar->setEnabled(false);
-    //memset(&header,0, sizeof(header));
 }
 
 MainWindow::~MainWindow() {
     delete ui;
-    if (photon!=nullptr) delete photon;
+    //if (photon!=nullptr) delete photon;
 }
 
 void MainWindow::on_actionOpen_triggered() {
@@ -30,16 +29,11 @@ void MainWindow::on_actionOpen_triggered() {
 
     if (inFile=="") return;
 
-    FILE *fp=fopen(inFile.toStdString().c_str(), "rb");
-    if (fp==nullptr) {
-        //qDebug() << endl << "Error! File: " << inFile << " does not exist!" << endl;
-        return;
-    }
-
     setWindowTitle("decreasePixel: " + inFile);
+    //photon.reset(new PhotonFile(fp));       // This is safer; Prevents memory leaks.
 
-    if (photon!=nullptr) delete photon;
-    photon = new PhotonFile(fp);
+    photon = std::make_unique<PhotonFile>(inFile.toStdString());
+
 
     QString tempStr;
     QTextStream outStr(&tempStr);
@@ -48,14 +42,18 @@ void MainWindow::on_actionOpen_triggered() {
     outStr << "File: " << endl << inFile.section("/",-1,-1) << endl;
     outStr << "loaded at: " << QTime::currentTime().toString() << endl << endl;
 
-   outStr << "Bed Dimensions (X, Y, Z): " << photon->getHeader().bedX << ", " << photon->getHeader().bedY << ", " << photon->getHeader().bedZ << endl;
+    outStr << "Bed Dimensions, X       : " << photon->getHeader().bedX << endl;
+    outStr << "Bed Dimensions, Y       : " << photon->getHeader().bedY << endl;
+    outStr << "Bed Dimensions, Z       : " << photon->getHeader().bedZ << endl;
     outStr << "Layer Height            : " << photon->getHeader().layerHeight << endl;
     outStr << "Exposure Time           : " << photon->getHeader().expTime << endl;
     outStr << "Bottom Exposure Time    : " << photon->getHeader().expBottom << endl;
     outStr << "Off Time                : " << photon->getHeader().offTime << endl;
     outStr << "#Bottom Layers          : " << photon->getHeader().bottomLayers << endl;
     outStr << "Total #Layers           : " << photon->getHeader().nrLayers << endl;
-   outStr << endl;
+    outStr << endl;
+
+    //std::cout << *photon.get();   // get() is a member of unique pointer and returns a pointer to the contained object.
 
     ui->txtInfo->appendPlainText(tempStr);
     ui->lblNrLayers->setText(QString::number(photon->getHeader().nrLayers) + " Layers");
@@ -67,7 +65,7 @@ void MainWindow::on_actionOpen_triggered() {
 
     ui->widget->repaint();
 
-    fclose(fp);
+    //fclose(fp);
 }
 
 void MainWindow::on_actionSave_triggered() {
@@ -88,9 +86,9 @@ void MainWindow::on_actionSave_triggered() {
     if (outFile=="") return;
 
     FILE *wp=fopen(outFile.toStdString().c_str(),"wb");
-
-    photon->writeFile(wp);
+    photon->writeFile(outFile.toStdString());
     fclose(wp);
+
     QString tempStr;
     QTextStream outStr(&tempStr);
     outStr << "File: " << endl << outFile.section("/",-1,-1) << endl;
@@ -139,6 +137,7 @@ void MainWindow::on_btnDecrease_clicked() {
         photon->decreasePixel(static_cast<unsigned long>(i));
         QCoreApplication::processEvents();              // This prevents the loop from blocking the GUI.
     }
+
     ui->statusBar->removeWidget(progressBar);
     ui->statusBar->removeWidget(label);
     delete progressBar;

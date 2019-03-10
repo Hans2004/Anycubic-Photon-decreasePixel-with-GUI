@@ -6,6 +6,7 @@
 #include <vector>
 #include <string.h>
 #include <string>
+#include <memory>
 
 using namespace std;
 
@@ -40,7 +41,8 @@ typedef struct {
     int     imageAddress;
     int     dataLength;
     int     padding[4];
-    char*   imageData;
+    //char*   imageData;
+    vector<unsigned char> imageData; // Much safer than using a char*
 } previewType;
 
 typedef struct {
@@ -61,11 +63,13 @@ class PhotonFile
 {
 public:
     PhotonFile( FILE *fp );
+    PhotonFile( string fileName);
     ~PhotonFile();
     headerType getHeader();
     void decodeImageFromRaw( unsigned long layer, pixelType (&pixelBuf)[1440][2560]);
-    void writeFile( FILE *wp );
+    void writeFile(string fileName);
     void decreasePixel(unsigned long layer);
+    friend ostream& operator<<(ostream &os, const PhotonFile &ff);
 
 private:
     headerType header;
@@ -74,19 +78,20 @@ private:
     vector<layerDefType> layerDefs;
     vector< vector<unsigned char> > rawData;
     pixelType pixelBuf[1440][2560];
-    FILE *fp;
+    FILE *fp=nullptr;
+    FILE *wp=nullptr;
 
     void readHeader();
-    void writeHeader( headerType *header, FILE *fp);
+    void writeHeader();
     void readPreview();
-    void writePreview( previewType *preview, FILE* fp);
+    void writePreviews();
     void readLayerDefs();
-    void writeLayerDefs( int nrLayersString, vector<layerDefType> *layerDefs, FILE *fp );
+    void writeLayerDefs();
     void readImages();
-    void writeImages(vector <vector <unsigned char> > *rawData, int nLayers,FILE *fp);
+    void writeImages();
     void decodeImage( layerDefType *layerDef, FILE *fp, pixelType (&pixelBuf)[1440][2560] );
     void encodeImageToRaw( unsigned long layer, pixelType (&pixelBuf)[1440][2560]);
-    void printProgress (double percentage);
+    static void printProgress (double percentage);
 };
 
 #endif // PHOTONFILE_H
